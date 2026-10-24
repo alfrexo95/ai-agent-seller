@@ -164,8 +164,18 @@ def main():
     # 2. Revisar pagos completados y entregar
     try:
         settlements = ucash.get_settlements()
+        
+        # Asegurarnos de que sea una lista. Si la API devuelve un dict o un string, lo manejamos.
+        if isinstance(settlements, dict):
+            # A veces la API devuelve {'data': [...]} o {'settlements': [...]}
+            settlements = settlements.get("data", settlements.get("settlements", []))
+        
+        if not isinstance(settlements, list):
+            print(f"ℹ️ No hay pagos pendientes o el formato de respuesta no es una lista (Recibido: {type(settlements)}).")
+            settlements = []
+
         for settlement in settlements:
-            if settlement.get("status") == "settled":
+            if isinstance(settlement, dict) and settlement.get("status") == "settled":
                 for job_id, data in list(state.items()):
                     if data.get("res_id") == settlement.get("res_id") and data.get("status") == "pending_payment":
                         print(f"💰 Pago confirmado para el trabajo {job_id}")
