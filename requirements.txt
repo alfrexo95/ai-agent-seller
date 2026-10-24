@@ -4,3 +4,4 @@ pandas
 numpy
 deep-translator
 requests
+beautifulsoup4

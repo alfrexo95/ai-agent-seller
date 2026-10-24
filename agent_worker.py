@@ -5,17 +5,24 @@ import requests
 import pandas as pd
 import numpy as np
 from deep_translator import GoogleTranslator
+from bs4 import BeautifulSoup
 from agentsouk import AgentSouk
 from agents_u_cash import AgentsUCash
 
 AGENTSOUK_API_KEY = os.environ["AGENTSOUK_API_KEY"]
 UCASH_API_KEY = os.environ["UCASH_API_KEY"]
 STATE_FILE = "pending_jobs.json"
-PRICES = {"translation": 0.40, "data_analysis": 1.00, "default": 2.00}
 
-# Tiempo que el bot se queda despierto en cada ciclo (en segundos)
-AWAKE_TIME = 10 * 60  # 10 minutos
-CHECK_INTERVAL = 60   # Revisar cada 60 segundos
+# NUEVOS PRECIOS
+PRICES = {
+    "translation": 0.40, 
+    "data_analysis": 1.00, 
+    "web_scraping": 0.50,
+    "default": 2.00
+}
+
+# TEXTO PROMOCIONAL
+PROMO_TEXT = "\n\n---\n🤖 *Powered by Cuban Freedom Tech.*\nCheck out my other AI services on Agentsouk!\n👉 https://github.com/alfrexo95"
 
 aw = AgentSouk(api_key=AGENTSOUK_API_KEY)
 ucash = AgentsUCash(api_key=UCASH_API_KEY)
@@ -33,58 +40,69 @@ def save_state(state):
 def traducir_texto(texto):
     try:
         return GoogleTranslator(source='auto', target='es').translate(texto)
-    except Exception as e:
+    except:
         return f"[Error de traducción] {texto}"
 
 def analizar_datos_y_senales():
-    """Análisis rápido con NumPy (sin TensorFlow)"""
     try:
         url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=7"
         res = requests.get(url, timeout=15).json()
         prices = [p[1] for p in res["prices"]]
-        
         df = pd.DataFrame(prices, columns=["close"])
         df["sma_3"] = df["close"].rolling(window=3).mean()
-        
         delta = df["close"].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=3).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=3).mean()
         rs = gain / loss
         df["rsi"] = 100 - (100 / (1 + rs))
         df = df.dropna()
-        
         if len(df) < 5: return "Datos insuficientes."
-            
         c = df["close"].iloc[-1]
         sma = df["sma_3"].iloc[-1]
         rsi = df["rsi"].iloc[-1]
-        
-        # Predicción rápida usando regresión lineal (NumPy)
         y = df["close"].values[-5:]
         x = np.arange(len(y))
         slope, intercept = np.polyfit(x, y, 1)
         prediccion = slope * len(y) + intercept
-        
         señal = "MANTENER"
         if c < sma and rsi < 40 and prediccion > c: señal = "COMPRA 🟢"
         elif c > sma and rsi > 60 and prediccion < c: señal = "VENTA 🔴"
-            
-        return f"""
-📊 **Análisis BTC**
-- Precio: ${c:.2f}
-- SMA (3d): ${sma:.2f}
-- RSI (3d): {rsi:.2f}
-- Predicción NumPy: ${prediccion:.2f}
-- **Señal: {señal}**"""
+        return f"📊 **Análisis BTC**\n- Precio: ${c:.2f}\n- SMA: ${sma:.2f}\n- RSI: {rsi:.2f}\n- Predicción: ${prediccion:.2f}\n- **Señal: {señal}**"
     except Exception as e:
         return f"Error: {e}"
 
+def scrape_web(url):
+    """Extrae el texto de una URL."""
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        res = requests.get(url, headers=headers, timeout=15)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        # Eliminar scripts y estilos
+        for script in soup(["script", "style"]):
+            script.decompose()
+        text = soup.get_text(separator=' ')
+        # Limpiar espacios en blanco
+        lines = (line.strip() for line in text.splitlines())
+        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+        text = '\n'.join(chunk for chunk in chunks if chunk)
+        return text[:2000] # Devolver solo los primeros 2000 caracteres para no saturar
+    except Exception as e:
+        return f"Error extrayendo texto: {e}"
+
 def procesar_trabajo(job_type, input_data):
+    result = {}
     if job_type == "translation":
-        return {"translation": traducir_texto(input_data.get("text", ""))}
+        result["translation"] = traducir_texto(input_data.get("text", ""))
     elif job_type == "data_analysis":
-        return {"analysis": analizar_datos_y_senales()}
-    return {"error": "No soportado"}
+        result["analysis"] = analizar_datos_y_senales()
+    elif job_type == "web_scraping":
+        result["scraped_text"] = scrape_web(input_data.get("url", ""))
+    else:
+        result["error"] = "No soportado"
+    
+    # Añadir el texto promocional al final del resultado
+    result["promo"] = PROMO_TEXT
+    return result
 
 def revisar_inbox_y_pagos(state):
     # 1. Revisar Inbox
@@ -95,7 +113,15 @@ def revisar_inbox_y_pagos(state):
             if job_id in state: continue
 
             title = job.get("listing_title", "").lower()
-            job_type = "translation" if "traducción" in title or "translation" in title else "data_analysis" if "análisis" in title else "default"
+            if "traducción" in title or "translation" in title:
+                job_type = "translation"
+            elif "análisis" in title or "analysis" in title:
+                job_type = "data_analysis"
+            elif "scraping" in title or "extracción" in title:
+                job_type = "web_scraping"
+            else:
+                job_type = "default"
+                
             price = PRICES.get(job_type, PRICES["default"])
             
             print(f"📥 Nuevo trabajo: {job_id} | Tipo: {job_type} | Precio: ${price:.2f}")
@@ -111,8 +137,7 @@ def revisar_inbox_y_pagos(state):
     # 2. Revisar Pagos
     try:
         settlements = ucash.get_settlements()
-        if isinstance(settlements, dict):
-            settlements = settlements.get("data", settlements.get("settlements", []))
+        if isinstance(settlements, dict): settlements = settlements.get("data", settlements.get("settlements", []))
         if not isinstance(settlements, list): settlements = []
 
         for settlement in settlements:
@@ -131,17 +156,18 @@ def revisar_inbox_y_pagos(state):
     save_state(state)
 
 def main():
-    print("🚀 Bot encendido. Iniciando ventana de trabajo continuo...")
+    print("🚀 Bot encendido (Modo Multi-Servicio + Promoción)...")
     start_time = time.time()
+    AWAKE_TIME = 10 * 60
+    CHECK_INTERVAL = 60
     
-    # Bucle de trabajo continuo: se mantiene despierto revisando cada 60 segundos
     while time.time() - start_time < AWAKE_TIME:
         print(f"\n⏰ Revisando a las {time.strftime('%H:%M:%S')}...")
         state = load_state()
         revisar_inbox_y_pagos(state)
         time.sleep(CHECK_INTERVAL)
         
-    print("\n🛑 Ventana de trabajo terminada. El bot se apagará hasta el próximo ciclo.")
+    print("\n🛑 Ventana de trabajo terminada.")
 
 if __name__ == "__main__":
     main()
