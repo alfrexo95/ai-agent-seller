@@ -5,7 +5,7 @@ import requests
 import pandas as pd
 import numpy as np
 import tensorflow as tf
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 from agentsouk import AgentSouk
 from agents_u_cash import AgentsUCash
 
@@ -34,12 +34,11 @@ def save_state(state):
         json.dump(state, f, indent=2)
 
 def traducir_texto(texto):
-    """Traduce texto usando googletrans (gratis, sin API Key)."""
+    """Traduce texto usando deep-translator (gratis, sin API Key)."""
     try:
-        translator = Translator()
-        # Traducir al español (puedes cambiarlo a 'en' si prefieres)
-        result = translator.translate(texto, src='auto', dest='es')
-        return result.text
+        # Traducir al español
+        translated = GoogleTranslator(source='auto', target='es').translate(texto)
+        return translated
     except Exception as e:
         print(f"  ⚠️ Error en traducción: {e}")
         return f"[Error de traducción] {texto}"

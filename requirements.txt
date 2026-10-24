@@ -3,5 +3,5 @@ agents-u-cash
 pandas
 numpy
 tensorflow-cpu
-googletrans==4.0.0-rc1
+deep-translator
 requests
