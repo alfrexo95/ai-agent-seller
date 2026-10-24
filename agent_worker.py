@@ -1,6 +1,5 @@
 import os
 import json
-import time
 import requests
 import pandas as pd
 import numpy as np
@@ -13,7 +12,13 @@ from agents_u_cash import AgentsUCash
 AGENTSOUK_API_KEY = os.environ["AGENTSOUK_API_KEY"]
 UCASH_API_KEY = os.environ["UCASH_API_KEY"]
 STATE_FILE = "pending_jobs.json"
-PRICE_USD = 2.00
+
+# Definir los precios por tipo de servicio
+PRICES = {
+    "translation": 0.40,
+    "data_analysis": 1.00,
+    "default": 2.00
+}
 
 # Forzar CPU y limitar hilos para evitar OOM en GitHub Actions
 tf.config.set_visible_devices([], 'GPU')
@@ -36,7 +41,6 @@ def save_state(state):
 def traducir_texto(texto):
     """Traduce texto usando deep-translator (gratis, sin API Key)."""
     try:
-        # Traducir al español
         translated = GoogleTranslator(source='auto', target='es').translate(texto)
         return translated
     except Exception as e:
@@ -46,25 +50,20 @@ def traducir_texto(texto):
 def analizar_datos_y_senales():
     """Obtiene datos de BTC, calcula indicadores y genera una señal con TensorFlow."""
     try:
-        # 1. Obtener datos de los últimos 7 días de CoinGecko (API gratuita)
         url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=7"
         res = requests.get(url, timeout=15)
         data = res.json()
         prices = [p[1] for p in data["prices"]]
         
         df = pd.DataFrame(prices, columns=["close"])
-        
-        # 2. Calcular indicadores técnicos con Pandas
         df["sma_3"] = df["close"].rolling(window=3).mean()
         
-        # Calcular RSI (Relative Strength Index) de forma simple
         delta = df["close"].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=3).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=3).mean()
         rs = gain / loss
         df["rsi"] = 100 - (100 / (1 + rs))
         
-        # Tomar los últimos datos válidos
         df = df.dropna()
         if len(df) < 5:
             return "Datos insuficientes para el análisis."
@@ -73,8 +72,6 @@ def analizar_datos_y_senales():
         ultima_sma = df["sma_3"].iloc[-1]
         ultimo_rsi = df["rsi"].iloc[-1]
         
-        # 3. Usar TensorFlow para una predicción simple
-        # Creamos un modelo muy ligero (2 capas) con los últimos 5 precios como entrada
         X = df["close"].values[-5:].reshape(1, 5)
         y = df["close"].values[-1].reshape(1, 1)
         
@@ -83,12 +80,10 @@ def analizar_datos_y_senales():
             tf.keras.layers.Dense(1)
         ])
         model.compile(optimizer='adam', loss='mse')
-        # Entrenamiento rápido (1 epoch para no demorar)
         model.fit(X, y, epochs=1, verbose=0)
         
         prediccion = model.predict(X, verbose=0)[0][0]
         
-        # 4. Generar señal combinando indicadores y predicción
         señal = "MANTENER"
         if ultimo_cierre < ultima_sma and ultimo_rsi < 40 and prediccion > ultimo_cierre:
             señal = "COMPRA 🟢"
@@ -133,19 +128,32 @@ def main():
         if job_id in state:
             continue
 
-        print(f"📥 Nuevo trabajo: {job_id}")
+        # Determinar el tipo de trabajo (basado en el título del listing)
+        title = job.get("listing_title", "").lower()
+        if "traducción" in title or "translation" in title:
+            job_type = "translation"
+        elif "análisis" in title or "analysis" in title:
+            job_type = "data_analysis"
+        else:
+            job_type = "default"
+            
+        price = PRICES.get(job_type, PRICES["default"])
+        
+        print(f"📥 Nuevo trabajo: {job_id} | Tipo: {job_type} | Precio: ${price:.2f}")
+
         try:
-            # Crear recurso de pago
-            res = ucash.create_resource(amount=PRICE_USD)
+            # Crear recurso de pago con el precio dinámico
+            res = ucash.create_resource(amount=price)
             res_id = res["res_id"]
             payment_url = f"https://agents.u.cash/r/{res_id}"
             
             # Enviar enlace de pago
-            aw.jobs.message(job_id, f"Por favor paga ${PRICE_USD} USD aquí: {payment_url}")
+            aw.jobs.message(job_id, f"Por favor paga ${price:.2f} USD aquí: {payment_url}")
             
             state[job_id] = {
                 "res_id": res_id,
-                "price": PRICE_USD,
+                "price": price,
+                "job_type": job_type,
                 "payment_url": payment_url,
                 "status": "pending_payment"
             }
@@ -162,14 +170,12 @@ def main():
                     if data.get("res_id") == settlement.get("res_id") and data.get("status") == "pending_payment":
                         print(f"💰 Pago confirmado para el trabajo {job_id}")
                         
-                        # Obtener detalles del trabajo
                         try:
                             job_details = aw.jobs.get(job_id)
-                            listing_type = job_details.get("listing", {}).get("category", "unknown")
                             input_data = job_details.get("input", {})
                             
                             # Procesar y entregar
-                            output = procesar_trabajo(listing_type, input_data)
+                            output = procesar_trabajo(data["job_type"], input_data)
                             aw.jobs.deliver(job_id, output=output)
                             
                             data["status"] = "paid"
