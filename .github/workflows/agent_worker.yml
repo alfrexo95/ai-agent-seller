@@ -2,17 +2,16 @@ name: AI Agent Worker
 
 on:
   schedule:
-    - cron: '*/15 * * * *' # Cada 15 minutos
+    - cron: '0 */12 * * *' # Cada 12 horas (00:00 y 12:00 UTC)
   workflow_dispatch:
 
-# --- AQUÍ ESTÁ EL TRUCO: Permiso de escritura ---
 permissions:
   contents: write
 
 jobs:
   run-worker:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20 # Margen de seguridad para 15 mins de trabajo + instalación
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
