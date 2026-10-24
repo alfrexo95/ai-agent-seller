@@ -2,6 +2,5 @@ agentsouk
 agents-u-cash
 pandas
 numpy
-tensorflow-cpu
 deep-translator
 requests
