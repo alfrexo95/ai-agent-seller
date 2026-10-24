@@ -5,10 +5,14 @@ on:
     - cron: '*/15 * * * *' # Cada 15 minutos
   workflow_dispatch:
 
+# --- AQUÍ ESTÁ EL TRUCO: Permiso de escritura ---
+permissions:
+  contents: write
+
 jobs:
   run-worker:
     runs-on: ubuntu-latest
-    timeout-minutes: 15 # Tiempo límite de seguridad
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
