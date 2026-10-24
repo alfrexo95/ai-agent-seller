@@ -2,7 +2,8 @@ name: AI Agent Worker
 
 on:
   schedule:
-    - cron: '0 */12 * * *' # Cada 12 horas (00:00 y 12:00 UTC)
+    # 11:00 UTC (7:00 AM Cuba) y 23:00 UTC (7:00 PM Cuba)
+    - cron: '0 11,23 * * *' 
   workflow_dispatch:
 
 permissions:
@@ -11,7 +12,7 @@ permissions:
 jobs:
   run-worker:
     runs-on: ubuntu-latest
-    timeout-minutes: 20 # Margen de seguridad para 15 mins de trabajo + instalación
+    timeout-minutes: 40 # Margen de seguridad para 30 mins de trabajo + instalación
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

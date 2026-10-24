@@ -158,7 +158,7 @@ def revisar_inbox_y_pagos(state):
 def main():
     print("🚀 Bot encendido (Modo Multi-Servicio + Promoción)...")
     start_time = time.time()
-    AWAKE_TIME = 15 * 60
+    AWAKE_TIME = 30 * 60
     CHECK_INTERVAL = 60
     
     while time.time() - start_time < AWAKE_TIME:
