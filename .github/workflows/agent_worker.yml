@@ -29,6 +29,22 @@ jobs:
           AGENTSOUK_API_KEY: ${{ secrets.AGENTSOUK_API_KEY }}
           UCASH_API_KEY: ${{ secrets.UCASH_API_KEY }}
         run: python agent_worker.py
+
+      - name: Register AI Agent Seller in Predator Hub (optional)
+        if: ${{ secrets.INFRA_HUB_TOKEN != '' }}
+        continue-on-error: true
+        env:
+          HUB_TOKEN: ${{ secrets.INFRA_HUB_TOKEN }}
+          HUB_URL: https://x402-api-wigc.onrender.com
+        run: |
+          set -euo pipefail
+          curl --silent --show-error --fail --max-time 15 \
+            -H "Authorization: Bearer $HUB_TOKEN" -H "Content-Type: application/json" \
+            -d '{"agent_id":"ai-agent-seller","platform":"github-actions","capabilities":["agent.marketplace","job.execution","payment.verify"]}' \
+            "$HUB_URL/infra/agents/register"
+          curl --silent --show-error --fail --max-time 15 \
+            -H "Authorization: Bearer $HUB_TOKEN" -H "Content-Type: application/json" \
+            -d '{}' "$HUB_URL/infra/agents/ai-agent-seller/heartbeat"
       - name: Guardar estado
         run: |
           git config user.name "agent-bot"
