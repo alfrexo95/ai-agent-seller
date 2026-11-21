@@ -28,7 +28,12 @@ jobs:
         env:
           AGENTSOUK_API_KEY: ${{ secrets.AGENTSOUK_API_KEY }}
           UCASH_API_KEY: ${{ secrets.UCASH_API_KEY }}
-        run: python agent_worker.py
+        run: |
+          if [ -z "${AGENTSOUK_API_KEY:-}" ] || [ -z "${UCASH_API_KEY:-}" ]; then
+            echo "Seller worker skipped: required marketplace credentials are not configured."
+            exit 0
+          fi
+          python agent_worker.py
 
       - name: Register AI Agent Seller in Predator Hub (optional)
         continue-on-error: true
